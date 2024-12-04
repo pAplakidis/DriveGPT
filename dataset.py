@@ -7,14 +7,15 @@ import matplotlib.pyplot as plt
 from tqdm import tqdm
 from torch.utils.data import Dataset
 
-from utils import *
 from config import *
 
 
 class CommaDataset(Dataset):
-  def __init__(self, base_dir):
+  def __init__(self, base_dir, multiframe=False):
     super(CommaDataset, self).__init__()
     self.base_dir = base_dir
+    self.multiframe = False
+
     self.cam_path = os.path.join(self.base_dir, "camera")
     self.log_path = os.path.join(self.base_dir, "log")
     assert len(os.listdir(self.cam_path)) == len(os.listdir(self.log_path))
@@ -49,23 +50,23 @@ class CommaDataset(Dataset):
     return self.dataset_length
 
   def __getitem__(self, index):
-    print(index)
-    assert 0 <= index < self.dataset_length
+    # print(index)
+    # TODO: handle this inside dataloader+trainer as well
+    assert 0 <= index < (self.dataset_length - N_FRAMES if self.mutliframe else self.dataset_length - 1)
     dataset_idx = 0
     data_idx = index
     for length in self.indices:
-      if index <= length:
-        break
+      if index <= length: break
       dataset_idx += 1
       data_idx = index - length - 1
-    print(f"{dataset_idx} - {data_idx}")
+    # print(f"{dataset_idx} - {data_idx}")
 
     log = self.logs[dataset_idx]
     cam = self.cams[dataset_idx]
     angle_steers = log['steering_angle'][data_idx]
     speed_ms = log['speed'][data_idx]
-    image = cam['X'][data_idx]
-    return {"angle_steers": angle_steers, "speed_ms": speed_ms, "image": image}
+    images = cam['X'][data_idx:data_idx+N_FRAMES if self.multiframe else data_idx]
+    return {"angle_steers": angle_steers, "speed_ms": speed_ms, "images": images}
 
   def init_display(self):
     size = (320*2, 160*2)
