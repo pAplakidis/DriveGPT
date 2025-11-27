@@ -1,0 +1,11 @@
+VQVAE - Neural Discrete Representation Learning
+
+loss functions for VAE
+- maximum likelihood
+- reconstruction loss
+
+K embeddings (vectors) of dimensionality D
+x => encoder => z_e(x)
+z => nearest neighbour look-up (using shared embedding space e, i.e. q(z = k|x) = 1 for k = argmin_j||z_e(x) - e_j||_2, 0 otherwise)
+z_q(x) is the input of the decoder: z_q(x) = e_k, where k = argmin_k||z_e(x) - e_j||_2
+like classic VAE with a mapping of the latents to 1-of-K embedding vectors

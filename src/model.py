@@ -2,7 +2,12 @@
 import torch
 import torch.nn as nn
 
-from config import *
+image_shape = (3, 80, 160)
+ch = image_shape[0]
+rows = [image_shape[1]//i for i in [16, 8, 4, 2, 1]]
+cols = [image_shape[2]//i for i in [16, 8, 4, 2, 1]]
+z_dim = 512 
+
 
 class Encoder(nn.Module):
   def __init__(self, df_dim, ch, rows, cols, z_dim):
