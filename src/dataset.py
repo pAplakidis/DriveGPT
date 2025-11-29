@@ -3,7 +3,6 @@ import os
 import h5py
 import pygame
 import numpy as np
-import matplotlib.pyplot as plt
 from tqdm import tqdm
 from PIL import Image
 
@@ -11,16 +10,18 @@ import torchvision.transforms as transforms
 from torch.utils.data import Dataset
 
 from config import *
-from constants import IMAGENET_MEAN, IMAGENET_STD
+from constants import *
 
 
 class CommaDataset(Dataset):
-  def __init__(self, base_dir, multiframe=False, cache=True, read_from_cache=True):
+  def __init__(self, base_dir, multiframe=False, cache=True, read_from_cache=True, n_datasets=list(range(N_DATASETS)), mode=DataMode.VAL):
     super(CommaDataset, self).__init__()
     self.base_dir = base_dir
     self.multiframe = multiframe
     self.cache = cache
     self.read_from_cache = read_from_cache
+    self.n_datasets = n_datasets
+    self.mode = mode
 
     self.cam_path = os.path.join(self.base_dir, "camera")
     self.log_path = os.path.join(self.base_dir, "log")
@@ -33,26 +34,29 @@ class CommaDataset(Dataset):
     self.init_datasets()
 
   def init_datasets(self):
-    print("[*] Initializing dataset")
+    print(f"[*] Initializing {self.mode} dataset")
 
     if self.cache and (
-      os.path.exists("cache/indices.npy") and
-      os.path.exists("cache/datasets.npy") and
-      os.path.exists("cache/cams.npy") and
-      os.path.exists("cache/logs.npy") and
-      os.path.exists("cache/dataset_length.npy") and
-      os.path.exists("cache/num_datasets.npy")
+      os.path.exists(f"cache/{self.mode}/indices.npy") and
+      os.path.exists(f"cache/{self.mode}/datasets.npy") and
+      os.path.exists(f"cache/{self.mode}/cams.npy") and
+      os.path.exists(f"cache/{self.mode}/logs.npy") and
+      os.path.exists(f"cache/{self.mode}/dataset_length.npy") and
+      os.path.exists(f"cache/{self.mode}/num_datasets.npy")
     ):
-      self.indices = list(np.load("cache/indices.npy"))
-      self.datasets = list(np.load("cache/datasets.npy"))
-      self.cams = list(np.load("cache/cams.npy", allow_pickle=True))
-      self.logs = list(np.load("cache/logs.npy", allow_pickle=True))
-      self.dataset_length = int(np.load("cache/dataset_length.npy"))
-      self.num_datasets = int(np.load("cache/num_datasets.npy"))
+      # TODO: train and val folders
+      self.indices = list(np.load(f"cache/{self.mode}/indices.npy"))
+      self.datasets = list(np.load(f"cache/{self.mode}/datasets.npy"))
+      self.cams = list(np.load(f"cache/{self.mode}/cams.npy", allow_pickle=True))
+      self.logs = list(np.load(f"cache/{self.mode}/logs.npy", allow_pickle=True))
+      self.dataset_length = int(np.load(f"cache/{self.mode}/dataset_length.npy"))
+      self.num_datasets = int(np.load(f"cache/{self.mode}/num_datasets.npy"))
       print("[+] Loaded from cache")
     else:
+      dataset_files = sorted(os.listdir(self.cam_path))
+      self.datasets = [dataset_files[i] for i in self.n_datasets]
+
       self.indices = []
-      self.datasets = sorted(os.listdir(self.cam_path))
       self.cams = []
       self.logs = []
       for i, dataset in enumerate((t := tqdm(self.datasets))):
@@ -69,13 +73,13 @@ class CommaDataset(Dataset):
       self.dataset_length += 1
 
       if self.cache:
-        np.save("cache/indices.npy", np.array(self.indices))
-        np.save("cache/datasets.npy", np.array(self.datasets))
-        np.save("cache/cams.npy", np.array(self.cams))
-        np.save("cache/logs.npy", np.array(self.logs))  # FIXME: ValueError: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (11,) + inhomogeneous part.
-        np.save("cache/dataset_length.npy", np.array(self.dataset_length))
-        np.save("cache/num_datasets.npy", np.array(len(self.datasets)))
-        print("[+] Caches saved in cache/ directory")
+        np.save(f"cache/{self.mode}/indices.npy", np.array(self.indices))
+        np.save(f"cache/{self.mode}/datasets.npy", np.array(self.datasets))
+        np.save(f"cache/{self.mode}/cams.npy", np.array(self.cams))
+        np.save(f"cache/{self.mode}/logs.npy", np.array(self.logs))  # FIXME: ValueError: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (11,) + inhomogeneous part.
+        np.save(f"cache/{self.mode}/dataset_length.npy", np.array(self.dataset_length))
+        np.save(f"cache/{self.mode}/num_datasets.npy", np.array(len(self.datasets)))
+        print("[+] Caches saved in cache/{self.mode}/ directory")
 
     print("[*] Dataset indices:", self.indices)
     print("[*] Dataset length:", self.dataset_length)

@@ -1,0 +1,3 @@
+[submodule "src/vqvae"]
+	path = src/vqvae
+	url = https://github.com/MishaLaskin/vqvae.git

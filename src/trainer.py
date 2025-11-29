@@ -14,6 +14,7 @@ from pytorch_msssim import ssim
 
 from config import *
 
+# TODO: every N epochs, calculate FID and save sample reconstructions (original vs reconstructed)
 class Trainer:
   def __init__(
     self,
@@ -92,7 +93,7 @@ class Trainer:
       "scheduler": self.scheduler.state_dict() if self.scheduler else None,
     }
     torch.save(checkpoint, chpt_path)
-    print(f"[+] Checkpoint saved at {chpt_path}. New min eval loss {min_loss}")
+    print(f"[+] Checkpoint saved at {chpt_path}." + (f" New min eval loss {min_loss}" if best else ""))
 
   def load_checkpoint(self, chpt_path):
     if chpt_path is None or not os.path.exists(chpt_path):
@@ -142,7 +143,12 @@ class Trainer:
   def train_step(self, t, step, sample_batched, optim):
     X = sample_batched["image"].to(self.device)
     Y = X.clone().to(self.device)
-    out, quantize_loss = self.model(X)  # TODO: use quantize_loss (check paper and implementation)
+    quantize_loss, out, perplexity = self.model(X)
+    # TODO: use this loss (need to get x_train_var)
+    # embedding_loss, x_hat, perplexity = self.model(X)
+    # recon_loss = torch.mean((x_hat - X)**2) / x_train_var
+    # loss = recon_loss + embedding_loss
+
     optim.zero_grad()
 
     loss = (self.loss_func(out, Y) + quantize_loss).mean()
@@ -248,9 +254,15 @@ class Trainer:
     Y = X.clone().to(self.device)
 
     if EMA:
-      out, quantize_loss = self.ema_model(X)
+      quantize_loss, out, perplexity = self.ema_model(X)
+      # embedding_loss, x_hat, perplexity = self.model(X)
+      # recon_loss = torch.mean((x_hat - X)**2) / x_train_var
+      # loss = recon_loss + embedding_loss
     else:
-      out, quantize_loss = self.model(X)
+      quantize_loss, out, perplexity = self.model(X)
+      # embedding_loss, x_hat, perplexity = self.model(X)
+      # recon_loss = torch.mean((x_hat - X)**2) / x_train_var
+      # loss = recon_loss + embedding_loss
 
     loss = (self.loss_func(out, Y) + quantize_loss).mean()
 

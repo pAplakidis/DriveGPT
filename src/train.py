@@ -2,12 +2,16 @@
 import os
 import psutil
 import torch
+from dataclasses import dataclass
 from torch.utils.data import DataLoader
 
 from config import *
 from dataset import CommaDataset
-from vqvae import VQVAE
 from trainer import Trainer
+from vqvae.models.vqvae import VQVAE
+
+from config import *
+from constants import *
 
 # EXAMPLE USAGE: MODEL_PATH=checkpoints/vqvae.pt CHECKPOINT=checkpoints/vqvae_best.py ./train.py
 
@@ -41,12 +45,8 @@ if __name__ == "__main__":
   # print(f"NORMALIZE_STATES: {NORMALIZE_STATES}")
   print()
 
-  dataset = CommaDataset(BASE_DIR, cache=CACHE, read_from_cache=READ_FROM_CACHE)
-  train_split = int(0.8 * len(dataset))
-  val_split = int(len(dataset) - train_split)
-  train_set, val_set = torch.utils.data.random_split(dataset, [train_split, val_split])
-
-  vqvae = VQVAE(in_size=3, out_size=3).to(device)
+  train_set = CommaDataset(BASE_DIR, cache=CACHE, read_from_cache=READ_FROM_CACHE, n_datasets=TRAIN_DATASETS, mode=DataMode.TRAIN)
+  val_set = CommaDataset(BASE_DIR, cache=CACHE, read_from_cache=READ_FROM_CACHE, n_datasets=VAL_DATASETS, mode=DataMode.VAL)
 
   train_loader =  DataLoader(
     train_set, batch_size=BATCH_SIZE, shuffle=True,
@@ -57,8 +57,18 @@ if __name__ == "__main__":
     prefetch_factor=PREFETCH_FACTOR, num_workers=N_WORKERS, pin_memory=PIN_MEMORY
   )
 
+  cfg = VQVAEConfig()
+  model = VQVAE(
+    cfg.n_hiddens,
+    cfg.n_residual_hiddens,
+    cfg.n_residual_layers,
+    cfg.n_embeddings,
+    cfg.embedding_dim,
+    cfg.beta
+  ).to(device)
+
   trainer = Trainer(
-    device, vqvae, MODEL_PATH, train_loader, val_loader,
+    device, model, MODEL_PATH, train_loader, val_loader,
     checkpoint_path=CHECKPOINT, writer_path=WRITER_PATH, eval_epoch=True,
     save_checkpoints=True, early_stopping=True
   )
