@@ -2,16 +2,17 @@
 import os
 import psutil
 import torch
+import numpy as np
 from dataclasses import dataclass
 from torch.utils.data import DataLoader
 
 from config import *
+from constants import *
+from utils import *
 from dataset import CommaDataset
 from trainer import Trainer
 from vqvae.models.vqvae import VQVAE
 
-from config import *
-from constants import *
 
 # EXAMPLE USAGE: MODEL_PATH=checkpoints/vqvae.pt CHECKPOINT=checkpoints/vqvae_best.py ./train.py
 
@@ -57,6 +58,17 @@ if __name__ == "__main__":
     prefetch_factor=PREFETCH_FACTOR, num_workers=N_WORKERS, pin_memory=PIN_MEMORY
   )
 
+  # TODO: load from cache if available
+  x_train_var = compute_variance_dataloader(train_loader)
+  x_val_var = compute_variance_dataloader(val_loader)
+  print(f"Train variance: {x_train_var:.8f}")
+  print(f"Val variance:   {x_val_var:.8f}")
+  print()
+
+  # if CACHE:
+  #   np.save("cache/train/image_variance.npy", np.array(x_train_var))
+  #   np.save("cache/val/image_variance.npy", np.array(x_val_var))
+
   cfg = VQVAEConfig()
   model = VQVAE(
     cfg.n_hiddens,
@@ -72,5 +84,5 @@ if __name__ == "__main__":
     checkpoint_path=CHECKPOINT, writer_path=WRITER_PATH, eval_epoch=True,
     save_checkpoints=True, early_stopping=True
   )
-  trainer.train()
+  trainer.train(x_train_var, x_val_var)
 

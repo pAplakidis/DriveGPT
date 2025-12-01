@@ -68,13 +68,15 @@ class Trainer:
     print("[*] Tensorboard output path:", writer_path)
 
     self.train_metrics = {
-      "L1_loss": [],
+      "loss": [],
+      "perplexity": [],
       "ssim": [],
       "LPIPS": [],
       # "FID": [],
     }
     self.val_metrics = {
-      "L1_loss": [],
+      "loss": [],
+      "perplexity": [],
       "ssim": [],
       "LPIPS": [],
       # "FID": [],
@@ -140,21 +142,18 @@ class Trainer:
       if accumulators is not None and name in accumulators:
         accumulators[name].append(value)
 
-  def train_step(self, t, step, sample_batched, optim):
+  def train_step(self, t, step, sample_batched, optim, x_train_var):
     X = sample_batched["image"].to(self.device)
     Y = X.clone().to(self.device)
-    quantize_loss, out, perplexity = self.model(X)
-    # TODO: use this loss (need to get x_train_var)
-    # embedding_loss, x_hat, perplexity = self.model(X)
-    # recon_loss = torch.mean((x_hat - X)**2) / x_train_var
-    # loss = recon_loss + embedding_loss
+    embedding_loss, x_hat, perplexity = self.model(X)
+    recon_loss = torch.mean((x_hat - X)**2) / x_train_var
+    loss = recon_loss + embedding_loss
 
     optim.zero_grad()
 
-    loss = (self.loss_func(out, Y) + quantize_loss).mean()
-    ssim_val = ssim(out, Y, data_range=1.0).item()
+    ssim_val = ssim(x_hat, Y, data_range=1.0).item()
     with torch.no_grad():
-      lpips_val = self.lpips_fn(out, Y).mean().item()
+      lpips_val = self.lpips_fn(x_hat, Y).mean().item()
 
     loss.backward()
     optim.step()
@@ -164,7 +163,8 @@ class Trainer:
       self.ema_model.update_parameters(self.model)
 
     current_metrics = {
-      "L1_loss": loss.item(),
+      "loss": loss.item(),
+      "perplexity": perplexity.item(),
       "ssim": ssim_val,
       "LPIPS": lpips_val,
       # "FID": [],
@@ -179,7 +179,7 @@ class Trainer:
       f"{name}: {value:.4f}" for name, value in current_metrics.items()
     ))
 
-  def train(self):
+  def train(self, x_train_var, x_val_var):
     try:
       min_epoch_vloss = self.min_epoch_vloss
       step = self.step
@@ -189,13 +189,15 @@ class Trainer:
       print("[*] Training...")
       for epoch in range(self.start_epoch, EPOCHS):
         self.epoch_train_metrics = {
-          "L1_loss": [],
+          "loss": [],
+          "perplexity": [],
           "ssim": [],
           "LPIPS": [],
           # "FID": [],
         }
         self.epoch_val_metrics = {
-          "L1_loss": [],
+          "loss": [],
+          "perplexity": [],
           "ssim": [],
           "LPIPS": [],
           # "FID": [],
@@ -204,7 +206,7 @@ class Trainer:
         self.model.train()
         print(f"\n[=>] Epoch {epoch+1}/{EPOCHS}")
         for i_batch, sample_batched in enumerate((t := tqdm(self.train_loader))):
-          self.train_step(t, step, sample_batched, self.optim)
+          self.train_step(t, step, sample_batched, self.optim, x_train_var)
           step += 1
 
         avg_metrics = {name: np.mean(values) for name, values in self.epoch_train_metrics.items()}
@@ -215,7 +217,7 @@ class Trainer:
 
         avg_epoch_vloss = None
         if self.eval_epoch:
-          vstep, avg_epoch_vloss = self.eval(vstep, epoch)
+          vstep, avg_epoch_vloss = self.eval(vstep, epoch, x_val_var)
 
         if self.scheduler:
           self.scheduler.step(avg_epoch_vloss)
@@ -249,29 +251,26 @@ class Trainer:
     # if self.scheduler:
     #   torch.save(self.scheduler.state_dict(), self.model_path.replace(".pt", f"_scheduler.pt"))
 
-  def eval_step(self, t, vstep, sample_batched):
+  def eval_step(self, t, vstep, sample_batched, x_val_var):
     X = sample_batched["image"].to(self.device)
     Y = X.clone().to(self.device)
 
     if EMA:
-      quantize_loss, out, perplexity = self.ema_model(X)
-      # embedding_loss, x_hat, perplexity = self.model(X)
-      # recon_loss = torch.mean((x_hat - X)**2) / x_train_var
-      # loss = recon_loss + embedding_loss
+      embedding_loss, x_hat, perplexity = self.model(X)
+      recon_loss = torch.mean((x_hat - X)**2) / x_val_var
+      loss = recon_loss + embedding_loss
     else:
-      quantize_loss, out, perplexity = self.model(X)
-      # embedding_loss, x_hat, perplexity = self.model(X)
-      # recon_loss = torch.mean((x_hat - X)**2) / x_train_var
-      # loss = recon_loss + embedding_loss
+      embedding_loss, x_hat, perplexity = self.model(X)
+      recon_loss = torch.mean((x_hat - X)**2) / x_val_var
+      loss = recon_loss + embedding_loss
 
-    loss = (self.loss_func(out, Y) + quantize_loss).mean()
-
-    ssim_val = ssim(out, Y, data_range=1.0).item()
+    ssim_val = ssim(x_hat, Y, data_range=1.0).item()
     with torch.no_grad():
-      lpips_val = self.lpips_fn(out, Y).mean().item()
+      lpips_val = self.lpips_fn(x_hat, Y).mean().item()
 
     current_metrics = {
-      "L1_loss": loss.item(),
+      "loss": loss.item(),
+      "perplexity": perplexity.item(),
       "ssim": ssim_val,
       "LPIPS": lpips_val,
       # "FID": [],
@@ -286,11 +285,11 @@ class Trainer:
       f"{name}: {value:.4f}" for name, value in current_metrics.items()
     ))
 
-  def eval(self, vstep, epoch):
+  def eval(self, vstep, epoch, x_val_var):
     with torch.no_grad():
       self.model.eval()
       for i_batch, sample_batched in enumerate((t := tqdm(self.val_loader))):
-        self.eval_step(t, vstep, sample_batched)
+        self.eval_step(t, vstep, sample_batched, x_val_var)
         vstep += 1
 
       avg_metrics = {name: np.mean(values) for name, values in self.epoch_val_metrics.items()}
@@ -299,4 +298,4 @@ class Trainer:
         f"{name}: {value:.4f}" for name, value in avg_metrics.items()
       ))
 
-    return vstep, avg_metrics["L1_loss"]
+    return vstep, avg_metrics["loss"]
