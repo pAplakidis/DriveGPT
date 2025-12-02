@@ -78,6 +78,7 @@ if __name__ == "__main__":
     cfg.embedding_dim,
     cfg.beta
   ).to(device)
+  print(f"[**] VQVAE Compression: {calc_latent_bits(cfg, H, W)} bits per image")
 
   trainer = Trainer(
     device, model, MODEL_PATH, train_loader, val_loader,

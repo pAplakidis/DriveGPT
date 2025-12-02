@@ -1,5 +1,8 @@
+import math
 import torch
 from tqdm import tqdm
+
+from config import *
 
 @torch.no_grad()
 def compute_variance_dataloader(dataloader):
@@ -31,3 +34,26 @@ def compute_variance_dataloader(dataloader):
 
   variance = M2 / n
   return float(variance)
+
+def calc_latent_bits(config: VQVAEConfig, H_in: int, W_in: int) -> int:
+  """
+  Calculate bits used by the latent space for a single image.
+  
+  Args:
+      config: VQVAEConfig object
+      H_in: input image height
+      W_in: input image width
+  
+  Returns:
+      total bits used by latent tokens
+  """
+  bits_per_token = math.ceil(math.log2(config.n_embeddings))
+  
+  # Latent grid size after encoder
+  H_latent = H_in // config.stride
+  W_latent = W_in // config.stride
+  
+  n_tokens = H_latent * W_latent
+  
+  total_bits = n_tokens * bits_per_token
+  return total_bits
