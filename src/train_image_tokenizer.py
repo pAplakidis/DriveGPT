@@ -6,12 +6,12 @@ import numpy as np
 from dataclasses import dataclass
 from torch.utils.data import DataLoader
 
-from config import *
-from constants import *
-from utils import *
-from dataset import CommaDataset
-from trainer import Trainer
-from vqvae.models.vqvae import VQVAE
+from image_tokenizer.config import *
+from image_tokenizer.constants import *
+from image_tokenizer.utils import *
+from image_tokenizer.dataset import CommaDataset
+from image_tokenizer.trainer import Trainer
+from image_tokenizer.vqvae.models.vqvae import VQVAE
 
 
 # EXAMPLE USAGE: MODEL_PATH=checkpoints/vqvae.pt CHECKPOINT=checkpoints/vqvae_best.py ./train.py

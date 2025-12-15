@@ -3,6 +3,6 @@ __pycache__/
 .vscode/
 
 data/
-cache/
-runs/
-checkpoints/
+**/cache/
+**/runs/
+**/checkpoints/

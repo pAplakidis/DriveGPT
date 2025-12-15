@@ -4,7 +4,7 @@ import torch.nn as nn
 import torch.functional as F
 from dataclasses import dataclass
 
-from config import *
+from image_tokenizer.config import *
 
 
 # TODO: use this instead of hardcoding values in model definition

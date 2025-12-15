@@ -1,3 +1,3 @@
-[submodule "src/vqvae"]
-	path = src/vqvae
+[submodule "src/image_tokenizer/vqvae"]
+	path = src/image_tokenizer/vqvae
 	url = https://github.com/MishaLaskin/vqvae.git

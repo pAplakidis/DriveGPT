@@ -2,7 +2,7 @@ import math
 import torch
 from tqdm import tqdm
 
-from config import *
+from image_tokenizer.config import *
 
 @torch.no_grad()
 def compute_variance_dataloader(dataloader):
