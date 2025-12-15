@@ -12,7 +12,7 @@ from torch.utils.tensorboard import SummaryWriter
 import lpips
 from pytorch_msssim import ssim
 
-from config import *
+from image_tokenizer.config import *
 
 # TODO: every N epochs, calculate FID and save sample reconstructions (original vs reconstructed)
 class Trainer:
@@ -82,6 +82,7 @@ class Trainer:
       # "FID": [],
     }
 
+  # TODO: save config
   def save_checkpoint(self, epoch, step, vstep, min_loss, stop_cnt, best=False):
     chpt_path = self.model_path.split(".")[0] + f"_best.pt" if best else self.model_path.split(".")[0] + ".pt"
     checkpoint = {

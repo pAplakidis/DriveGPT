@@ -1,23 +1,34 @@
 #!/usr/bin/env python3
 import os
 import h5py
-import pygame
 import numpy as np
 from tqdm import tqdm
 from PIL import Image
 
-import torchvision.transforms as transforms
+import torch
+import torchvision.transforms as T
 from torch.utils.data import Dataset
 
 from config import *
-from constants import *
+from image_tokenizer.constants import *
+
 
 
 class CommaDataset(Dataset):
-  def __init__(self, base_dir, multiframe=False, cache=True, read_from_cache=True, n_datasets=list(range(N_DATASETS)), mode=DataMode.VAL):
+  def __init__(
+    self,
+    base_dir,
+    seq_len,
+    normalize_logs=True,
+    cache=True,
+    read_from_cache=True,
+    n_datasets=list(range(N_DATASETS)),
+    mode=DataMode.VAL
+  ):
     super(CommaDataset, self).__init__()
     self.base_dir = base_dir
-    self.multiframe = multiframe
+    self.seq_len = seq_len
+    self.normalize_logs = normalize_logs
     self.cache = cache
     self.read_from_cache = read_from_cache
     self.n_datasets = n_datasets
@@ -27,108 +38,219 @@ class CommaDataset(Dataset):
     self.log_path = os.path.join(self.base_dir, "log")
     assert len(os.listdir(self.cam_path)) == len(os.listdir(self.log_path))
 
-    transform_list = [transforms.ToTensor(), transforms.Resize((H, W)), transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)]
-    self.transform = transforms.Compose(transform_list)
+    self.transform = T.Compose([
+      T.Resize((H, W)),
+      T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ])
     
     self.dataset_length = 0
     self.init_datasets()
+    self.init_sequences()
+    if self.normalize_logs: self.init_logs()
 
-  def init_datasets(self):
-    print(f"[*] Initializing {self.mode} dataset")
-
-    if self.cache and (
-      os.path.exists(f"cache/{self.mode}/indices.npy") and
-      os.path.exists(f"cache/{self.mode}/datasets.npy") and
-      os.path.exists(f"cache/{self.mode}/cams.npy") and
-      os.path.exists(f"cache/{self.mode}/logs.npy") and
-      os.path.exists(f"cache/{self.mode}/dataset_length.npy") and
-      os.path.exists(f"cache/{self.mode}/num_datasets.npy")
-    ):
-      # TODO: train and val folders
-      self.indices = list(np.load(f"cache/{self.mode}/indices.npy"))
-      self.datasets = list(np.load(f"cache/{self.mode}/datasets.npy"))
-      self.cams = list(np.load(f"cache/{self.mode}/cams.npy", allow_pickle=True))
-      self.logs = list(np.load(f"cache/{self.mode}/logs.npy", allow_pickle=True))
-      self.dataset_length = int(np.load(f"cache/{self.mode}/dataset_length.npy"))
-      self.num_datasets = int(np.load(f"cache/{self.mode}/num_datasets.npy"))
-      print("[+] Loaded from cache")
-    else:
-      dataset_files = sorted(os.listdir(self.cam_path))
-      self.datasets = [dataset_files[i] for i in self.n_datasets]
-
-      self.indices = []
-      self.cams = []
-      self.logs = []
-      for i, dataset in enumerate((t := tqdm(self.datasets))):
-        self.cams.append(cam := h5py.File(os.path.join(self.cam_path, dataset), "r"))
-        self.logs.append(h5py.File(os.path.join(self.log_path, dataset), "r"))
-        data_len = cam['X'][()].shape[0]
-        t.set_description(f"{i+1}/{len(self.datasets)} - {data_len}")
-
-        self.dataset_length += data_len - 1
-        if i == 0:
-          self.indices.append(data_len - 1)
-        else:
-          self.indices.append(data_len - 1 + self.indices[i-1])
-      self.dataset_length += 1
-
-      if self.cache:
-        np.save(f"cache/{self.mode}/indices.npy", np.array(self.indices))
-        np.save(f"cache/{self.mode}/datasets.npy", np.array(self.datasets))
-        np.save(f"cache/{self.mode}/cams.npy", np.array(self.cams))
-        np.save(f"cache/{self.mode}/logs.npy", np.array(self.logs))  # FIXME: ValueError: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (11,) + inhomogeneous part.
-        np.save(f"cache/{self.mode}/dataset_length.npy", np.array(self.dataset_length))
-        np.save(f"cache/{self.mode}/num_datasets.npy", np.array(len(self.datasets)))
-        print("[+] Caches saved in cache/{self.mode}/ directory")
-
-    print("[*] Dataset indices:", self.indices)
-    print("[*] Dataset length:", self.dataset_length)
     print("[+] Dataset initialized")
 
+  def load_cache(self, base_cache_path):
+    self.indices = list(np.load(f"{base_cache_path}/indices.npy"))
+    self.datasets = list(np.load(f"{base_cache_path}/datasets.npy"))
+    self.cams = list(np.load(f"{base_cache_path}/cams.npy", allow_pickle=True))
+
+    self.steers = np.load(f"{base_cache_path}/steers.npy")
+    self.speeds = np.load(f"{base_cache_path}/speeds.npy")
+
+    self.dataset_length = int(np.load(f"{base_cache_path}/dataset_length.npy"))
+    self.num_datasets = int(np.load(f"{base_cache_path}/num_datasets.npy"))
+
+    print("[+] Loaded values from cache")
+    print("[*] Dataset indices:", self.indices)
+    print("[*] Dataset length:", self.dataset_length)
+    print(f"[*] Steering angles {self.steers.shape} - Speeds (ms) {self.speeds.shape}")
+
+  def save_cache(self, base_cache_path):
+    np.save(f"{base_cache_path}/indices.npy", np.array(self.indices))
+    np.save(f"{base_cache_path}/datasets.npy", np.array(self.datasets))
+    np.save(f"{base_cache_path}/cams.npy", np.array(self.cams))
+    np.save(f"{base_cache_path}/steers.npy", np.array(self.steers))
+    np.save(f"{base_cache_path}/speeds.npy", np.array(self.speeds))
+    np.save(f"{base_cache_path}/dataset_length.npy", np.array(self.dataset_length))
+    np.save(f"{base_cache_path}/num_datasets.npy", np.array(len(self.datasets)))
+    print(f"[+] Caches saved in {base_cache_path}/ directory")
+
+  def init_datasets(self):
+    print(f"[~] Initializing {self.mode} dataset")
+    base_cache_path = f"cache/{self.mode}"
+    if self.cache: os.makedirs(base_cache_path, exist_ok=True)
+
+    self.steers, self.speeds = [], []
+    if self.read_from_cache and (
+      os.path.exists(f"{base_cache_path}/indices.npy") and
+      os.path.exists(f"{base_cache_path}/datasets.npy") and
+      os.path.exists(f"{base_cache_path}/cams.npy") and
+      os.path.exists(f"{base_cache_path}/steers.npy") and
+      os.path.exists(f"{base_cache_path}/speeds.npy") and
+      os.path.exists(f"{base_cache_path}/dataset_length.npy") and
+      os.path.exists(f"{base_cache_path}/num_datasets.npy")
+    ):
+      self.load_cache(base_cache_path)
+      return
+
+    dataset_files = sorted(os.listdir(self.cam_path))
+    self.datasets = [dataset_files[i] for i in self.n_datasets]
+
+    self.indices = [] # indices of last element of each dataset
+    self.cams = []
+    steers_all, speeds_all = [], []
+    for i, dataset in enumerate((t := tqdm(self.datasets))):
+      # handle cams
+      cam_path = os.path.join(self.cam_path, dataset)
+      with h5py.File(cam_path, "r") as cam:
+        data_len = cam["X"].shape[0]
+      self.cams.append(cam_path)
+      t.set_description(f"{i+1}/{len(self.datasets)} - {data_len}")
+
+      # dataset lengths and indices
+      self.dataset_length += data_len
+      if i == 0:
+        self.indices.append(data_len - 1)
+      else:
+        self.indices.append(self.indices[i-1] + data_len - 1)
+
+      # handle logs
+      log_file = h5py.File(os.path.join(self.log_path, dataset), "r")
+
+      # CAMS: 20Hz, LOGS: 100Hz
+      ratio = log_file['steering_angle'].shape[0] // data_len
+      assert ratio > 0, "Invalid log/cam ratio"
+      usable_log_len = data_len * ratio  # trim logs to be divisible
+
+      steers = log_file["steering_angle"][:usable_log_len]
+      speeds = log_file["speed"][:usable_log_len]
+      steers = steers.reshape(data_len, ratio).mean(axis=1)
+      speeds = speeds.reshape(data_len, ratio).mean(axis=1)
+      steers_all.append(steers)
+      speeds_all.append(speeds)
+    self.steers = np.concatenate(steers_all)
+    self.speeds = np.concatenate(speeds_all)
+
+    if self.cache: self.save_cache(base_cache_path)
+    print("[*] Dataset indices:", self.indices)
+    print("[*] Dataset length:", self.dataset_length)
+    print(f"[*] Steering angles {self.steers.shape} - Speeds (ms) {self.speeds.shape}")
+
+  def init_sequences(self):
+    """
+    Prepare autoregressive sequences.
+    Each sequence is (dataset_idx, start_frame_idx)
+    such that:
+      context: [start : start + N_FRAMES]
+      target : start + N_FRAMES
+    """
+    print("[~] Initializing sequences")
+    self.sequences = []
+    prev_dataset_end = -1
+    for dataset_idx, dataset_end in enumerate(self.indices):
+      dataset_start = prev_dataset_end + 1
+      dataset_len = dataset_end - dataset_start + 1
+
+      # number of valid autoregressive sequences in dataset
+      max_start = dataset_len - (self.seq_len + 1)
+      if max_start < 0:
+        prev_dataset_end = dataset_end
+        continue
+
+      for start in range(max_start + 1):
+        self.sequences.append((dataset_idx, start))
+
+      prev_dataset_end = dataset_end
+
+    print(f"[+] Built {len(self.sequences)} sequences")
+
+  def init_logs(self, zero_to_one=True):
+    print("[~] Initializing state values")
+
+    # TODO: np.digitize or just a Linear layer (?)
+    steers_clipped = np.clip(self.steers, -STEER_CLIP, STEER_CLIP)
+    speeds_clipped = np.clip(self.speeds, SPEED_MIN, SPEED_MAX)
+
+    # Min-max normalization with safety
+    steers_range = steers_clipped.max() - steers_clipped.min()
+    speeds_range = speeds_clipped.max() - speeds_clipped.min()
+    self.steers = (steers_clipped - steers_clipped.min()) / (steers_range if steers_range != 0 else 1)
+    self.speeds = (speeds_clipped - speeds_clipped.min()) / (speeds_range if speeds_range != 0 else 1)
+
+    # [-1, 1]
+    if not zero_to_one:
+      self.steers = 2 * self.steers - 1
+      self.speeds = 2 * self.speeds - 1
+
+    print(f"[*] Steers normalized: min={self.steers.min()}, max={self.steers.max()}")
+    print(f"[*] Speeds normalized: min={self.speeds.min()}, max={self.speeds.max()}")
+
   def __len__(self):
-    return self.dataset_length
+    return len(self.sequences)
+
+  def __del__(self):
+    if hasattr(self, "_cam_files"):
+      for f in self._cam_files.values():
+        f.close()
 
   def __getitem__(self, index):
-    # assert 0 <= index < (self.dataset_length - 1 - ((N_FRAMES - 1) if self.multiframe else 0))
+    dataset_idx, start_idx = self.sequences[index]
 
-    dataset_idx = 0
-    data_idx = index
-    for length in self.indices:
-      if index <= length: break
-      dataset_idx += 1
-      data_idx = index - length - 1
-    # print(f"{dataset_idx} - {data_idx}")
+    cam = self._get_cam(dataset_idx)
+    images = cam["X"][start_idx : start_idx + self.seq_len + 1]
+    seq_frames = self._apply_transform(images[:self.seq_len])
+    next_frame = self._apply_transform(images[self.seq_len:self.seq_len + 1])
 
-    log = self.logs[dataset_idx]
-    cam = self.cams[dataset_idx]
-    angle_steers = log['steering_angle'][data_idx]
-    speed_ms = log['speed'][data_idx]
+    gidx = self._global_idx(dataset_idx, start_idx + self.seq_len)
 
-    # images = cam['X'][data_idx:data_idx+N_FRAMES if self.multiframe else data_idx]
-    disp_image = cam['X'][data_idx]
-    image = Image.fromarray(np.transpose(disp_image, (1, 2, 0)))
-    image = self.transform(image)
+    return {
+      "seq_frames": seq_frames,
+      "next_frame": next_frame,
+      "angle_steers": torch.tensor(self.steers[gidx], dtype=torch.float32),
+      "speed_ms": torch.tensor(self.speeds[gidx], dtype=torch.float32),
+    }
 
-    return {"angle_steers": angle_steers, "speed_ms": speed_ms, "image": image, "disp_image": disp_image}
+  def _global_idx(self, dataset_idx, local_idx):
+    if dataset_idx == 0:
+        return local_idx
+    return self.indices[dataset_idx - 1] + 1 + local_idx
 
-  def init_display(self):
-    size = (320*2, 160*2)
-    pygame.display.set_caption("comma.ai data viewer")
-    self.screen = pygame.display.set_mode(size, pygame.DOUBLEBUF)
-    self.camera_surface = pygame.surface.Surface((W,H),0,24).convert()
-    print("[+] Pygame display initialized")
-  
-  def display_img(self, img):
-    img = img.swapaxes(0,2).swapaxes(0,1)
-    while True:
-      pygame.surfarray.blit_array(self.camera_surface, img.swapaxes(0,1))
-      camera_surface_2x = pygame.transform.scale2x(self.camera_surface)
-      self.screen.blit(camera_surface_2x, (0,0))
-      pygame.display.flip()
+  def _apply_transform(self, frames):
+    return self.transform(torch.from_numpy(frames).float() / 255.0) # (T, C, H, W)
+
+  def _get_cam(self, dataset_idx):
+    if not hasattr(self, "_cam_files"):
+      self._cam_files = {}
+
+    if dataset_idx not in self._cam_files:
+      self._cam_files[dataset_idx] = h5py.File(self.cams[dataset_idx], "r", swmr=True, libver="latest")
+
+    return self._cam_files[dataset_idx]
+
+  def _denormalize_img(image):
+    """
+    image: (C,H,W)
+    returns: HWC uint8
+    """
+    mean = np.array(IMAGENET_MEAN).reshape(3,1,1)
+    std = np.array(IMAGENET_STD).reshape(3,1,1)
+
+    img = image.numpy() * std + mean
+    img = np.clip(img, 0, 1)
+    img = (img * 255).astype(np.uint8)
+    return np.transpose(img, (1,2,0))  # (H, W, C)
+
+  # TODO: write this
+  def _denormalize_controls(steer, speed):
+    pass
 
 
 if __name__ == "__main__":
-  dataset = CommaDataset(BASE_DIR)
+  dataset = CommaDataset(BASE_DIR, N_FRAMES, cache=True, read_from_cache=False, mode=DataMode.TRAIN)
   print(len(dataset))
-  data = dataset[100]
-  print(data)
+  data = dataset[1000]
+  print(data["seq_frames"].shape)
+  print(data["next_frame"].shape)
+  print(data["angle_steers"], data["angle_steers"].shape)
+  print(data["speed_ms"], data["speed_ms"].shape)
