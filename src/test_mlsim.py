@@ -6,9 +6,10 @@ from models.mlsim import MLSim, MLSimConfig
 
 def test_model():
   images = torch.randn(1, N_FRAMES, 3, H, W, dtype=torch.float, device=device)
+  actions = torch.rand((1, N_FRAMES, 2), device=device)
   cfg = MLSimConfig()
   model = MLSim(cfg, device=device).to(device)
-  out = model(images, None)
+  out = model(images, actions)
   print(out.shape)
 
 

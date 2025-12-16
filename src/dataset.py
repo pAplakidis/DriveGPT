@@ -203,12 +203,14 @@ class CommaDataset(Dataset):
     next_frame = self._apply_transform(images[self.seq_len:self.seq_len + 1])
 
     gidx = self._global_idx(dataset_idx, start_idx + self.seq_len)
+    angle_steers = torch.tensor(self.steers[gidx], dtype=torch.float32)
+    speed_ms = torch.tensor(self.speeds[gidx], dtype=torch.float32)
+    actions = torch.stack((angle_steers, speed_ms), dim=0)
 
     return {
       "seq_frames": seq_frames,
       "next_frame": next_frame,
-      "angle_steers": torch.tensor(self.steers[gidx], dtype=torch.float32),
-      "speed_ms": torch.tensor(self.speeds[gidx], dtype=torch.float32),
+      "actions": actions  # (steer, speed)
     }
 
   def _global_idx(self, dataset_idx, local_idx):
@@ -252,5 +254,4 @@ if __name__ == "__main__":
   data = dataset[1000]
   print(data["seq_frames"].shape)
   print(data["next_frame"].shape)
-  print(data["angle_steers"], data["angle_steers"].shape)
-  print(data["speed_ms"], data["speed_ms"].shape)
+  print(data["actions"])
