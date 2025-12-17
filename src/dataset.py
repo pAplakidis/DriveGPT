@@ -23,7 +23,8 @@ class CommaDataset(Dataset):
     cache=True,
     read_from_cache=True,
     n_datasets=list(range(N_DATASETS)),
-    mode=DataMode.VAL
+    mode=DataMode.VAL,
+    single_frame=False
   ):
     super(CommaDataset, self).__init__()
     self.base_dir = base_dir
@@ -33,7 +34,9 @@ class CommaDataset(Dataset):
     self.read_from_cache = read_from_cache
     self.n_datasets = n_datasets
     self.mode = mode
+    self.single_frame = single_frame
 
+    self.token_dir = os.path.join(self.base_dir, "tokens", self.mode)  # TODO: load tokens
     self.cam_path = os.path.join(self.base_dir, "camera")
     self.log_path = os.path.join(self.base_dir, "log")
     assert len(os.listdir(self.cam_path)) == len(os.listdir(self.log_path))
@@ -194,7 +197,23 @@ class CommaDataset(Dataset):
       for f in self._cam_files.values():
         f.close()
 
-  def __getitem__(self, index):
+  def singleframe_getitem(self, index):
+    """Fetches a single frame from the dataset. Used for pretraining the image tokenizer"""
+
+    dataset_idx, inner_idx = self.sequences[index]
+    cam = self._get_cam(dataset_idx)
+    image = self._apply_transform(cam["X"][inner_idx])
+    return {
+      "index": index,
+      "dataset_idx": dataset_idx,
+      "inner_idx": inner_idx,
+      "image": image,
+      # "disp_image": disp_image  # TODO: return displayable image as well
+    }
+
+  def multiframe_getitem(self, index):
+    """Fetches a sequence of frames and their corresponding actions (steer, speed)"""
+
     dataset_idx, start_idx = self.sequences[index]
 
     cam = self._get_cam(dataset_idx)
@@ -213,6 +232,12 @@ class CommaDataset(Dataset):
       "actions": actions  # (steer, speed)
     }
 
+  def __getitem__(self, index):
+    if self.single_frame:
+      return self.singleframe_getitem(index)
+
+    return self.multiframe_getitem(index)
+
   def _global_idx(self, dataset_idx, local_idx):
     if dataset_idx == 0:
         return local_idx
@@ -230,6 +255,7 @@ class CommaDataset(Dataset):
 
     return self._cam_files[dataset_idx]
 
+  @staticmethod
   def _denormalize_img(image):
     """
     image: (C,H,W)
@@ -244,6 +270,7 @@ class CommaDataset(Dataset):
     return np.transpose(img, (1,2,0))  # (H, W, C)
 
   # TODO: write this
+  @staticmethod
   def _denormalize_controls(steer, speed):
     pass
 
