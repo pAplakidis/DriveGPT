@@ -8,9 +8,7 @@ N_DATASETS = 11
 TRAIN_DATASETS = list(range(0, 8))
 VAL_DATASETS = list(range(8, 10))
 
-N_WORKERS = 8
-
-BATCH_SIZE = 64
+BATCH_SIZE = 32
 EMA = False
 LR = 3e-4
 WEIGHT_DECAY = 1e-5

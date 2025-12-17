@@ -105,5 +105,4 @@ class MLSim(nn.Module):
       self.cache = torch.cat((image_tokens[:, 1:], next_image_tokens.unsqueeze(0)), dim=1)
       return self.image_decoder(next_image_tokens)
 
-    # TODO: train using MSE(z_t+1, Z_t+1)
     return next_image_tokens
