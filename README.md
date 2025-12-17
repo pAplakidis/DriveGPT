@@ -26,6 +26,7 @@ A toy implementation of using VQVAE
   ```
 - Train
 - Inference App
+- Add RNN state to video decoder (smooth video)
 
 Need to go from this:
 
