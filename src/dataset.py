@@ -24,7 +24,8 @@ class CommaDataset(Dataset):
     read_from_cache=True,
     n_datasets=list(range(N_DATASETS)),
     mode=DataMode.VAL,
-    single_frame=False
+    single_frame=False,
+    tokens_only=False
   ):
     super(CommaDataset, self).__init__()
     self.base_dir = base_dir
@@ -35,6 +36,7 @@ class CommaDataset(Dataset):
     self.n_datasets = n_datasets
     self.mode = mode
     self.single_frame = single_frame
+    self.tokens_only = tokens_only
 
     self.token_dir = os.path.join(self.base_dir, "tokens", self.mode)  # TODO: load tokens
     self.cam_path = os.path.join(self.base_dir, "camera")
@@ -48,10 +50,28 @@ class CommaDataset(Dataset):
     
     self.dataset_length = 0
     self.init_datasets()
+    if os.path.exists(self.token_dir) and self.tokens_only: self.load_tokens()
     self.init_sequences()
     if self.normalize_logs: self.init_logs()
 
     print("[+] Dataset initialized")
+
+  def load_tokens(self):
+    self.all_tokens = []
+    self.token_indices = []
+    token_batches = [os.path.join(self.token_dir, dirr) for dirr in sorted(os.listdir(self.token_dir)) if dirr.endswith(".npz")]
+
+    for batch in tqdm(token_batches, desc="Loading tokens"):
+      data = np.load(batch, allow_pickle=True)
+      tokens = data["tokens"]          # shape: (B, Ht, Wt), dtype: uint16
+      dataset_idx = data["dataset_idx"]
+      inner_idx = data["inner_idx"]
+      self.Ht, self.Wt = data["token_hw"]      # [Ht, Wt]
+      self.all_tokens.append(tokens)
+      self.token_indices.append(np.stack([dataset_idx, inner_idx], axis=1))   # shape: (B, 2)
+
+    self.all_tokens = np.concatenate(self.all_tokens, axis=0)   # shape: (N, Ht, Wt)
+    self.token_indices = np.concatenate(self.token_indices, axis=0)   # shape: (N, 2)
 
   def load_cache(self, base_cache_path):
     self.indices = list(np.load(f"{base_cache_path}/indices.npy"))
@@ -171,7 +191,6 @@ class CommaDataset(Dataset):
   def init_logs(self, zero_to_one=True):
     print("[~] Initializing state values")
 
-    # TODO: np.digitize or just a Linear layer (?)
     steers_clipped = np.clip(self.steers, -STEER_CLIP, STEER_CLIP)
     speeds_clipped = np.clip(self.speeds, SPEED_MIN, SPEED_MAX)
 
@@ -232,9 +251,29 @@ class CommaDataset(Dataset):
       "actions": actions  # (steer, speed)
     }
 
+  def token_getitem(self, index):
+    """ Fetches a sequence of tokens and their corresponding actions (steer, speed) """
+    dataset_idx, start_idx = self.sequences[index]
+    seq_tokens = self.all_tokens[start_idx : start_idx + self.seq_len]  # (T, Ht, Wt)
+    next_token = self.all_tokens[self.seq_len: self.seq_len + 1]  # (1, Ht, Wt)
+
+    gidx = self._global_idx(dataset_idx, start_idx + self.seq_len)
+    angle_steers = torch.tensor(self.steers[gidx:gidx+self.seq_len], dtype=torch.float32)
+    speed_ms = torch.tensor(self.speeds[gidx:gidx+self.seq_len], dtype=torch.float32)
+    actions = torch.stack((angle_steers, speed_ms), dim=1)
+
+    return {
+      "seq_tokens": seq_tokens,
+      "next_token": next_token,
+      "actions": actions  # (steer, speed)
+    }
+
   def __getitem__(self, index):
     if self.single_frame:
       return self.singleframe_getitem(index)
+      
+    if self.tokens_only:
+      return self.token_getitem(index)
 
     return self.multiframe_getitem(index)
 
@@ -276,9 +315,19 @@ class CommaDataset(Dataset):
 
 
 if __name__ == "__main__":
-  dataset = CommaDataset(BASE_DIR, N_FRAMES, cache=True, read_from_cache=False, mode=DataMode.TRAIN)
+  dataset = CommaDataset(
+    BASE_DIR,
+    N_FRAMES,
+    n_datasets=TRAIN_DATASETS,
+    cache=True,
+    read_from_cache=False,
+    tokens_only=True,
+    mode=DataMode.TRAIN
+  )
   print(len(dataset))
   data = dataset[1000]
-  print(data["seq_frames"].shape)
-  print(data["next_frame"].shape)
+  # print(data["seq_frames"].shape)
+  # print(data["next_frame"].shape)
+  print(data["seq_tokens"].shape)
+  print(data["next_token"].shape)
   print(data["actions"])
