@@ -38,7 +38,7 @@ class CommaDataset(Dataset):
     self.single_frame = single_frame
     self.tokens_only = tokens_only
 
-    self.token_dir = os.path.join(self.base_dir, "tokens", self.mode)  # TODO: load tokens
+    self.token_dir = os.path.join(self.base_dir, "tokens", self.mode)
     self.cam_path = os.path.join(self.base_dir, "camera")
     self.log_path = os.path.join(self.base_dir, "log")
     assert len(os.listdir(self.cam_path)) == len(os.listdir(self.log_path))

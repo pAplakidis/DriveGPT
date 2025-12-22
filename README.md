@@ -13,7 +13,7 @@ A toy implementation of using VQVAE
 ### TODO
 
 - Too slow to train without large compute
-  - pre-tokenize dataset images once (offline)
+  - pre-tokenize dataset images once (offline) (DONE)
   - do not run vqvae (self.model.image_tokenizer) in trainer.train_step()
   - reduce transformer token count (currently T × H_e × W_e tokens) => pool spatially OR flatten spatial>MLP>smaller token
   - Sanity check with profiler
@@ -24,22 +24,8 @@ A toy implementation of using VQVAE
   torch.cuda.synchronize()
   print("Batch time:", time.time() - start)
   ```
-- Train
+- Train MLSIM
 - Inference App
 - Add RNN state to video decoder (smooth video)
-
-Need to go from this:
-
-```
-pixels ──▶ tokenizer ──▶ tokens
-        └──────────────▶ tokenizer AGAIN
-tokens ──▶ transformer (1000-token seq)
-```
-
-to this:
-
-```
-pixels ──▶ tokenizer (ONCE, offline)
-tokens ──▶ transformer dynamics (TRAINED)
-tokens ──▶ decoder (optional, eval only)
-```
+- Train VQVAE as a GAN
+- Move from autoregressive GPT model to latent diffusion

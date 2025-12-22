@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-BASE_DIR = "../../data/comma.ai/comma_research_dataset/comma-dataset/comma-dataset"
+BASE_DIR = "../data/comma.ai/comma_research_dataset/comma-dataset/comma-dataset"
 
 H = 160
 W = 320
@@ -22,24 +22,7 @@ EARLY_STOP_EPOCHS = 15
 LR_FACTOR = 0.1
 LR_PATIENCE = 10
 
-
-# Latent Space Size Calculation:
-# bits per token=⌈log2​(n_embeddings)⌉ (e.g. n_embeddings = 256 → 8 bits, n_embeddings = 512 → 9 bits)
-# number of tokens (latent grid size) = H_latent × W_latent = H_in / s_h × W_in / s_w (e.g. s_h = s_w = 4 → 40 × 80 = 3200, s_h = s_w = 8 → 20 × 40 = 800)
-# s_h, s_w: total downsampling factor of encoder in height and width dimensions respectively
-# total bits per image = N_tokens × bits per token = (H_in / s_h × W_in / s_w) × ⌈log2​(n_embeddings)⌉
-
-# 256 × 9 = 2304 bits (original config from paper)
-# @dataclass
-# class VQVAEConfig:
-#   n_hiddens: int = 128
-#   n_residual_hiddens: int = 32
-#   n_residual_layers: int = 2
-#   n_embeddings: int = 512
-#   embedding_dim: int = 64
-#   beta: float = 0.25
-
-# 128 tokens × 10 bits = 1280 bits
+# 102400 bits
 @dataclass
 class VQVAEConfig:
   n_hiddens: int = 128
@@ -49,3 +32,13 @@ class VQVAEConfig:
   embedding_dim: int = 32
   beta: float = 0.25
   stride: int = 4 # total downsampling factor of the encoder
+
+# 1280 bits
+class VQVAEConfig1280:
+  n_hiddens: int = 128
+  n_residual_hiddens: int = 32
+  n_residual_layers: int = 2
+  n_embeddings: int = 256 # 8 bits per token
+  embedding_dim: int = 32
+  beta: float = 0.25
+  stride: int = 16        # downsample 256 -> 16

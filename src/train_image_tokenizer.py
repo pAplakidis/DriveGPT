@@ -2,8 +2,6 @@
 import os
 import psutil
 import torch
-import numpy as np
-from dataclasses import dataclass
 from torch.utils.data import DataLoader
 
 from image_tokenizer.config import *
@@ -16,11 +14,9 @@ from image_tokenizer.vqvae.models.vqvae import VQVAE
 
 # EXAMPLE USAGE: MODEL_PATH=checkpoints/vqvae.pt CHECKPOINT=checkpoints/vqvae_best.py ./train.py
 
-MODEL_PATH = os.getenv("MODEL_PATH", "checkpoints/vqvae.pt")
+MODEL_PATH = os.getenv("MODEL_PATH", "image_tokenizer/checkpoints/vqvae.pt")
 CHECKPOINT = os.getenv("CHECKPOINT", None)
 WRITER_PATH = os.getenv("WRITER_PATH", None)
-CACHE = os.getenv("CACHE", False)
-READ_FROM_CACHE = os.getenv("READ_FROM_CACHE", True)
 
 N_WORKERS = psutil.cpu_count(logical=False)
 PREFETCH_FACTOR = psutil.cpu_count(logical=False) // 2
@@ -42,12 +38,11 @@ if __name__ == "__main__":
   print(f"Epochs: {EPOCHS} - Batch size: {BATCH_SIZE} - Learning rate: {LR} - Weight decay: {WEIGHT_DECAY}")
   print(f"Number of workers: {N_WORKERS} - Prefetch factor: {PREFETCH_FACTOR}")
   print(f"EMA: {EMA} - Pin memory: {PIN_MEMORY}")
-  print(f"Cache dataset: {CACHE} - Read from cache: {READ_FROM_CACHE}")
   # print(f"NORMALIZE_STATES: {NORMALIZE_STATES}")
   print()
 
-  train_set = CommaDataset(BASE_DIR, cache=CACHE, read_from_cache=READ_FROM_CACHE, n_datasets=TRAIN_DATASETS, mode=DataMode.TRAIN)
-  val_set = CommaDataset(BASE_DIR, cache=CACHE, read_from_cache=READ_FROM_CACHE, n_datasets=VAL_DATASETS, mode=DataMode.VAL)
+  train_set = CommaDataset(BASE_DIR, n_datasets=TRAIN_DATASETS, mode=DataMode.TRAIN)
+  val_set = CommaDataset(BASE_DIR, n_datasets=VAL_DATASETS, mode=DataMode.VAL)
 
   train_loader =  DataLoader(
     train_set, batch_size=BATCH_SIZE, shuffle=True,
@@ -58,18 +53,14 @@ if __name__ == "__main__":
     prefetch_factor=PREFETCH_FACTOR, num_workers=N_WORKERS, pin_memory=PIN_MEMORY
   )
 
-  # TODO: load from cache if available
+  # TODO: save
   x_train_var = compute_variance_dataloader(train_loader)
   x_val_var = compute_variance_dataloader(val_loader)
   print(f"Train variance: {x_train_var:.8f}")
   print(f"Val variance:   {x_val_var:.8f}")
   print()
 
-  # if CACHE:
-  #   np.save("cache/train/image_variance.npy", np.array(x_train_var))
-  #   np.save("cache/val/image_variance.npy", np.array(x_val_var))
-
-  cfg = VQVAEConfig()
+  cfg = VQVAEConfig1280()
   model = VQVAE(
     cfg.n_hiddens,
     cfg.n_residual_hiddens,

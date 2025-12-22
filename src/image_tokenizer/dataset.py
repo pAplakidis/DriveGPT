@@ -1,134 +1,108 @@
 #!/usr/bin/env python3
 import os
 import h5py
-import pygame
 import numpy as np
 from tqdm import tqdm
 from PIL import Image
 
-import torchvision.transforms as transforms
+import torch
+import torchvision.transforms as T
 from torch.utils.data import Dataset
 
-from image_tokenizer.config import *
+from config import *
 from image_tokenizer.constants import *
 
 
 class CommaDataset(Dataset):
-  def __init__(self, base_dir, multiframe=False, cache=True, read_from_cache=True, n_datasets=list(range(N_DATASETS)), mode=DataMode.VAL):
+  def __init__(
+    self,
+    base_dir,
+    n_datasets=list(range(N_DATASETS)),
+    mode=DataMode.VAL,
+    single_frame=False,
+  ):
     super(CommaDataset, self).__init__()
     self.base_dir = base_dir
-    self.multiframe = multiframe
-    self.cache = cache
-    self.read_from_cache = read_from_cache
     self.n_datasets = n_datasets
     self.mode = mode
+    self.single_frame = single_frame
 
     self.cam_path = os.path.join(self.base_dir, "camera")
-    self.log_path = os.path.join(self.base_dir, "log")
-    assert len(os.listdir(self.cam_path)) == len(os.listdir(self.log_path))
-
-    transform_list = [transforms.ToTensor(), transforms.Resize((H, W)), transforms.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD)]
-    self.transform = transforms.Compose(transform_list)
+    self.transform = T.Compose([
+      T.Resize((H, W)),
+      T.Normalize(mean=IMAGENET_MEAN, std=IMAGENET_STD),
+    ])
     
     self.dataset_length = 0
     self.init_datasets()
+    print("[+] Dataset initialized")
 
   def init_datasets(self):
-    print(f"[*] Initializing {self.mode} dataset")
+    print(f"[~] Initializing {self.mode} dataset")
 
-    if self.cache and (
-      os.path.exists(f"cache/{self.mode}/indices.npy") and
-      os.path.exists(f"cache/{self.mode}/datasets.npy") and
-      os.path.exists(f"cache/{self.mode}/cams.npy") and
-      os.path.exists(f"cache/{self.mode}/logs.npy") and
-      os.path.exists(f"cache/{self.mode}/dataset_length.npy") and
-      os.path.exists(f"cache/{self.mode}/num_datasets.npy")
-    ):
-      # TODO: train and val folders
-      self.indices = list(np.load(f"cache/{self.mode}/indices.npy"))
-      self.datasets = list(np.load(f"cache/{self.mode}/datasets.npy"))
-      self.cams = list(np.load(f"cache/{self.mode}/cams.npy", allow_pickle=True))
-      self.logs = list(np.load(f"cache/{self.mode}/logs.npy", allow_pickle=True))
-      self.dataset_length = int(np.load(f"cache/{self.mode}/dataset_length.npy"))
-      self.num_datasets = int(np.load(f"cache/{self.mode}/num_datasets.npy"))
-      print("[+] Loaded from cache")
-    else:
-      dataset_files = sorted(os.listdir(self.cam_path))
-      self.datasets = [dataset_files[i] for i in self.n_datasets]
+    dataset_files = sorted(os.listdir(self.cam_path))
+    self.datasets = [dataset_files[i] for i in self.n_datasets]
 
-      self.indices = []
-      self.cams = []
-      self.logs = []
-      for i, dataset in enumerate((t := tqdm(self.datasets))):
-        self.cams.append(cam := h5py.File(os.path.join(self.cam_path, dataset), "r"))
-        self.logs.append(h5py.File(os.path.join(self.log_path, dataset), "r"))
-        data_len = cam['X'][()].shape[0]
-        t.set_description(f"{i+1}/{len(self.datasets)} - {data_len}")
+    self.indices = [] # indices of last element of each dataset
+    self.cams = []
+    for i, dataset in enumerate((t := tqdm(self.datasets))):
+      cam_path = os.path.join(self.cam_path, dataset)
+      with h5py.File(cam_path, "r") as cam:
+        data_len = cam["X"].shape[0]
+      self.cams.append(cam_path)
+      t.set_description(f"{i+1}/{len(self.datasets)} - {data_len}")
 
-        self.dataset_length += data_len - 1
-        if i == 0:
-          self.indices.append(data_len - 1)
-        else:
-          self.indices.append(data_len - 1 + self.indices[i-1])
-      self.dataset_length += 1
-
-      if self.cache:
-        np.save(f"cache/{self.mode}/indices.npy", np.array(self.indices))
-        np.save(f"cache/{self.mode}/datasets.npy", np.array(self.datasets))
-        np.save(f"cache/{self.mode}/cams.npy", np.array(self.cams))
-        np.save(f"cache/{self.mode}/logs.npy", np.array(self.logs))  # FIXME: ValueError: setting an array element with a sequence. The requested array has an inhomogeneous shape after 1 dimensions. The detected shape was (11,) + inhomogeneous part.
-        np.save(f"cache/{self.mode}/dataset_length.npy", np.array(self.dataset_length))
-        np.save(f"cache/{self.mode}/num_datasets.npy", np.array(len(self.datasets)))
-        print("[+] Caches saved in cache/{self.mode}/ directory")
+      self.indices.append(data_len - 1 if i == 0 else self.indices[i - 1] + data_len)
+    self.dataset_length = self.indices[-1] + 1
 
     print("[*] Dataset indices:", self.indices)
     print("[*] Dataset length:", self.dataset_length)
-    print("[+] Dataset initialized")
 
   def __len__(self):
     return self.dataset_length
 
+  def __del__(self):
+    if hasattr(self, "_cam_files"):
+      for f in self._cam_files.values():
+        f.close()
+
   def __getitem__(self, index):
-    # assert 0 <= index < (self.dataset_length - 1 - ((N_FRAMES - 1) if self.multiframe else 0))
+    # find which dataset this index belongs to and compute index inside that dataset
+    dataset_idx = np.searchsorted(self.indices, index, side="left")
+    prev_end = self.indices[dataset_idx - 1] if dataset_idx > 0 else -1
+    frame_idx = index - prev_end - 1
 
-    dataset_idx = 0
-    data_idx = index
-    for length in self.indices:
-      if index <= length: break
-      dataset_idx += 1
-      data_idx = index - length - 1
-    # print(f"{dataset_idx} - {data_idx}")
+    cam = self._get_cam(dataset_idx)
+    image = self._apply_transform(cam["X"][frame_idx])
+    return {
+      "index": index,
+      "dataset_idx": dataset_idx,
+      "inner_idx": frame_idx,
+      "image": image,
+    }
 
-    log = self.logs[dataset_idx]
-    cam = self.cams[dataset_idx]
-    angle_steers = log['steering_angle'][data_idx]
-    speed_ms = log['speed'][data_idx]
+  def _apply_transform(self, frames):
+    return self.transform(torch.from_numpy(frames).float() / 255.0) # (T, C, H, W)
 
-    # images = cam['X'][data_idx:data_idx+N_FRAMES if self.multiframe else data_idx]
-    disp_image = cam['X'][data_idx]
-    image = Image.fromarray(np.transpose(disp_image, (1, 2, 0)))
-    image = self.transform(image)
+  def _get_cam(self, dataset_idx):
+    if not hasattr(self, "_cam_files"):
+      self._cam_files = {}
 
-    return {"angle_steers": angle_steers, "speed_ms": speed_ms, "image": image, "disp_image": disp_image}
+    if dataset_idx not in self._cam_files:
+      self._cam_files[dataset_idx] = h5py.File(self.cams[dataset_idx], "r", swmr=True, libver="latest")
 
-  def init_display(self):
-    size = (320*2, 160*2)
-    pygame.display.set_caption("comma.ai data viewer")
-    self.screen = pygame.display.set_mode(size, pygame.DOUBLEBUF)
-    self.camera_surface = pygame.surface.Surface((W,H),0,24).convert()
-    print("[+] Pygame display initialized")
-  
-  def display_img(self, img):
-    img = img.swapaxes(0,2).swapaxes(0,1)
-    while True:
-      pygame.surfarray.blit_array(self.camera_surface, img.swapaxes(0,1))
-      camera_surface_2x = pygame.transform.scale2x(self.camera_surface)
-      self.screen.blit(camera_surface_2x, (0,0))
-      pygame.display.flip()
+    return self._cam_files[dataset_idx]
 
+  @staticmethod
+  def _denormalize_img(image):
+    """
+    image: (C,H,W)
+    returns: HWC uint8
+    """
+    mean = np.array(IMAGENET_MEAN).reshape(3,1,1)
+    std = np.array(IMAGENET_STD).reshape(3,1,1)
 
-if __name__ == "__main__":
-  dataset = CommaDataset(BASE_DIR)
-  print(len(dataset))
-  data = dataset[100]
-  print(data)
+    img = image.numpy() * std + mean
+    img = np.clip(img, 0, 1)
+    img = (img * 255).astype(np.uint8)
+    return np.transpose(img, (1,2,0))  # (H, W, C)

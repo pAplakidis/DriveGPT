@@ -61,7 +61,7 @@ class Trainer:
     if not writer_path:
       today = str(datetime.now()).replace(" ", "_")
       auto_name = "-".join([model_path.split('/')[-1].split('.')[0], today, f"lr_{LR}", f"bs_{BATCH_SIZE}"])
-      writer_path = str("runs/" + auto_name).replace(":", "_").replace(".", "_")
+      writer_path = str("image_tokenizer/runs/" + auto_name).replace(":", "_").replace(".", "_")
       self.writer = SummaryWriter(writer_path)
     else:
       self.writer = SummaryWriter(writer_path, purge_step=cast(int, None), max_queue=10, flush_secs=30)
