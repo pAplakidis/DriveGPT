@@ -82,10 +82,10 @@ def reconstruct_tokens(tokens, original_img, i_batch, dataset, model):
   plt.close()
 
 
-def init_tokendir(path):
+def init_tokendir(path, mode):
   os.makedirs(path, exist_ok=True)
   meta = {
-    "mode": "TRAIN",
+    "mode": mode,
     "image_size": [H, W],
     "normalization": "imagenet",
     "vqvae_checkpoint": MODEL_PATH,
@@ -95,7 +95,7 @@ def init_tokendir(path):
 
 def tokenize_dataset(dataloader, model, mode: DataMode):
   token_dir = os.path.join(BASE_DIR, "tokens", mode)
-  init_tokendir(token_dir)
+  init_tokendir(token_dir, mode)
 
   with torch.no_grad():
     image_tokenizer = nn.Sequential(
@@ -130,18 +130,6 @@ def tokenize_dataset(dataloader, model, mode: DataMode):
       #   train_set,
       #   model
       # )
-
-      # TODO: load tokens like this:
-      # for batch_file in token_files:
-      #   data = np.load(batch_file)
-      #   mask = data["index"] == i
-      #   if mask.any():
-      #     tokens = data["tokens"][mask][0]
-      #     tokens = tokens.reshape(*data["token_hw"])
-
-      # how GPT should see data later
-      # tokens = data["tokens"]        # (H, W)
-      # sequence = tokens.flatten()   # (H*W,)
 
   print(f"[+] {mode} tokens saved at {token_dir}")
 
