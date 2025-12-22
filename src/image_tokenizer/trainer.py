@@ -14,6 +14,7 @@ from pytorch_msssim import ssim
 
 from image_tokenizer.config import *
 
+# TODO: train as a GAN (like VQGAN)
 # TODO: every N epochs, calculate FID and save sample reconstructions (original vs reconstructed)
 class Trainer:
   def __init__(
@@ -43,6 +44,30 @@ class Trainer:
     self.scheduler = None
     self.ema_model = None
     self.early_stopping = early_stopping
+
+    # for logging
+    self.hyperparams = {
+      "batch_size": BATCH_SIZE,
+      "weight_decay": WEIGHT_DECAY,
+      "lr": LR,
+      "lr_factor": LR_FACTOR,
+      "lr_patience": LR_PATIENCE,
+      "early_stopping": EARLY_STOP_EPOCHS,
+    }
+    self.config = {
+      "loss_func": "L1",
+      "EMA": EMA
+    }
+    model_cfg = VQVAEConfig1280()
+    self.model_cfg = {
+      "n_hiddens": model_cfg.n_hiddens,
+      "n_residual_hiddens": model_cfg.n_residual_hiddens,
+      "n_residual_layers": model_cfg.n_residual_layers,
+      "n_embeddings": model_cfg.n_embeddings,
+      "embedding_dim": model_cfg.embedding_dim,
+      "beta": model_cfg.beta,
+      "stride": model_cfg.stride,
+    }
 
     self.loss_func = nn.L1Loss(reduction='none')
     self.lpips_fn = lpips.LPIPS(net='alex').to(self.device)
@@ -82,7 +107,6 @@ class Trainer:
       # "FID": [],
     }
 
-  # TODO: save config
   def save_checkpoint(self, epoch, step, vstep, min_loss, stop_cnt, best=False):
     chpt_path = self.model_path.split(".")[0] + f"_best.pt" if best else self.model_path.split(".")[0] + ".pt"
     checkpoint = {
@@ -94,6 +118,9 @@ class Trainer:
       "model": self.ema_model.module.state_dict() if EMA else self.model.state_dict(),
       "optimizer": self.optim.state_dict(),
       "scheduler": self.scheduler.state_dict() if self.scheduler else None,
+      "hyperparams": self.hyperparams,
+      "config": self.config,
+      "model_cfg": self.model_cfg,
     }
     torch.save(checkpoint, chpt_path)
     print(f"[+] Checkpoint saved at {chpt_path}." + (f" New min eval loss {min_loss}" if best else ""))
@@ -144,6 +171,7 @@ class Trainer:
         accumulators[name].append(value)
 
   def train_step(self, t, step, sample_batched, optim, x_train_var):
+    # TODO: for i in range(X.shape[1]) -> feed 1,2,..N_FRAMES separately
     X = sample_batched["image"].to(self.device)
     Y = X.clone().to(self.device)
     embedding_loss, x_hat, perplexity = self.model(X)
@@ -227,7 +255,7 @@ class Trainer:
         # save checkpoints and early stop
         self.save_checkpoint(epoch, step, vstep, min_epoch_vloss, stop_cnt)
         if self.save_checkpoints and avg_epoch_vloss is not None and avg_epoch_vloss < min_epoch_vloss:
-          min_epoch_vloss = avg_epoch_vloss # TODO: use mae instead of loss (?)
+          min_epoch_vloss = avg_epoch_vloss
           stop_cnt = 0
           self.save_checkpoint(epoch, step, vstep, min_epoch_vloss, stop_cnt, best=True)
         else:
