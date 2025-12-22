@@ -6,6 +6,7 @@ from models.mlsim import MLSim, MLSimConfig
 
 def test_model():
   tokens_only = True
+  B = 2
 
   cfg = MLSimConfig()
   model = MLSim(cfg, tokens_only=tokens_only, device=device).to(device)
@@ -14,15 +15,22 @@ def test_model():
     x = torch.randint(
       low=0,
       high=model.vqvae_cfg.n_embeddings,
-      size=(1, N_FRAMES, 40, 80),
+      size=(B, N_FRAMES, 40, 80),
       device=device,
       dtype=torch.long
     )
   else:
-    x = torch.randn(1, N_FRAMES, 3, H, W, dtype=torch.float, device=device)
-  actions = torch.rand((1, N_FRAMES, 2), device=device)
+    x = torch.randn(B, N_FRAMES, 3, H, W, dtype=torch.float, device=device)
+  actions = torch.rand((B, N_FRAMES, 2), device=device)
+  targets = torch.randint(
+    low=0,
+    high=model.vqvae_cfg.n_embeddings,
+    size=(B, 40, 80),
+    device=device,
+    dtype=torch.long
+  )
 
-  out = model(x, actions)
+  out, loss = model(x, actions, targets=targets)
   print(out.shape)
 
 

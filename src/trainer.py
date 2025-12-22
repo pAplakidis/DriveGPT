@@ -40,7 +40,6 @@ class Trainer:
     self.ema_model = None
     self.early_stopping = early_stopping
 
-    self.loss_func = nn.MSELoss()
     self.optim = torch.optim.AdamW(self.model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY)
     self.scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(self.optim, mode='min', factor=LR_FACTOR, patience=LR_PATIENCE)
     if EMA:
@@ -130,16 +129,14 @@ class Trainer:
         accumulators[name].append(value)
 
   def train_step(self, t, step, sample_batched, optim):
-    IMGS = sample_batched["seq_frames"].to(self.device)
+    X = sample_batched["seq_tokens"].long().to(self.device)
     ACTIONS = sample_batched["actions"].to(self.device)
-    NEXT_FRAME = sample_batched["next_frame"].to(self.device)
+    NEXT_TOKEN = sample_batched["next_token"].long().to(self.device)
 
-    BS, T, C, H, W = NEXT_FRAME.shape
-    next_frame_flat = NEXT_FRAME.reshape(BS * T, C, H, W)
-    _, Y, _, _, _ = self.model.image_tokenizer(next_frame_flat)
+    B, T, H_e, W_e = NEXT_TOKEN.shape
+    Y = NEXT_TOKEN.reshape(B * T, H_e, W_e)
 
-    out = self.model(IMGS, ACTIONS)
-    loss = self.loss_func(out, Y)
+    out, loss = self.model(X, ACTIONS, targets=Y)
     optim.zero_grad()
     loss.backward()
     optim.step()
@@ -226,20 +223,17 @@ class Trainer:
     #   torch.save(self.scheduler.state_dict(), self.model_path.replace(".pt", f"_scheduler.pt"))
 
   def eval_step(self, t, vstep, sample_batched):
-    IMGS = sample_batched["seq_frames"].to(self.device)
+    X = sample_batched["seq_tokens"].long().to(self.device)
     ACTIONS = sample_batched["actions"].to(self.device)
-    NEXT_FRAME = sample_batched["next_frame"].to(self.device)
-    
-    BS, T, C, H, W = NEXT_FRAME.shape
-    next_frame_flat = NEXT_FRAME.reshape(BS * T, C, H, W)
-    _, Y, _, _, _ = self.model.image_tokenizer(next_frame_flat)
+    NEXT_TOKEN = sample_batched["next_token"].long().to(self.device)
+
+    B, T, H_e, W_e = NEXT_TOKEN.shape
+    Y = NEXT_TOKEN.reshape(B * T, H_e, W_e)
 
     if EMA:
-      out = self.ema_model(IMGS, ACTIONS)
-      loss = self.loss_func(out, Y)
+      out, loss = self.ema_model(X, ACTIONS, targets=Y)
     else:
-      out = self.model(IMGS, ACTIONS)
-      loss = self.loss_func(out, Y)
+      out, loss = self.model(X, ACTIONS, targets=Y)
 
     current_metrics = {
       "loss": loss.item(),

@@ -45,8 +45,24 @@ if __name__ == "__main__":
   # print(f"NORMALIZE_STATES: {NORMALIZE_STATES}")
   print()
 
-  train_set = CommaDataset(BASE_DIR, N_FRAMES, cache=CACHE, read_from_cache=READ_FROM_CACHE, n_datasets=TRAIN_DATASETS, mode=DataMode.TRAIN)
-  val_set = CommaDataset(BASE_DIR, N_FRAMES, cache=CACHE, read_from_cache=READ_FROM_CACHE, n_datasets=VAL_DATASETS, mode=DataMode.VAL)
+  train_set = CommaDataset(
+    BASE_DIR,
+    N_FRAMES,
+    tokens_only=True,
+    cache=CACHE,
+    read_from_cache=READ_FROM_CACHE,
+    n_datasets=TRAIN_DATASETS,
+    mode=DataMode.TRAIN
+  )
+  val_set = CommaDataset(
+    BASE_DIR,
+    N_FRAMES,
+    tokens_only=True,
+    cache=CACHE,
+    read_from_cache=READ_FROM_CACHE,
+    n_datasets=VAL_DATASETS,
+    mode=DataMode.VAL
+  )
 
   train_loader =  DataLoader(
     train_set, batch_size=BATCH_SIZE, shuffle=True,
@@ -58,7 +74,7 @@ if __name__ == "__main__":
   )
 
   cfg = MLSimConfig()
-  model = MLSim(cfg).to(device)
+  model = MLSim(cfg, tokens_only=True, device=device).to(device)
 
   trainer = Trainer(
     device, model, MODEL_PATH, train_loader, val_loader,

@@ -135,11 +135,11 @@ class MLSim(nn.Module):
       loss = None
     else:
       loss = F.cross_entropy(
-        logits.view(-1, self.vqvae.n_embeddings),
-        targets.view(-1)  # TODO: maybe .view(B*T)
+        logits.view(-1, self.vqvae_cfg.n_embeddings),
+        targets.view(-1)
       )
 
-    return logits
+    return logits, loss
 
   def generate(self, tokens, max_new_tokens):
     pass
