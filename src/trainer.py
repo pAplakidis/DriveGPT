@@ -210,7 +210,7 @@ class Trainer:
         #   print(f"[!] Stopping after {STOP_EVERY_EPOCHS} epochs since resume.")
         #   break
     except KeyboardInterrupt:
-      print("[*] Training interrupted. Saving model...")
+      print("[*] Training interrupted.")
 
     print("[+] Training done")
     # if EMA:

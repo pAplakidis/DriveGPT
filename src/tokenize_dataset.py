@@ -94,7 +94,7 @@ def init_tokendir(path, mode):
     json.dump(meta, f, indent=2)
 
 def tokenize_dataset(dataloader, model, mode: DataMode):
-  token_dir = os.path.join(BASE_DIR, "tokens", mode)
+  token_dir = os.path.join(BASE_DIR, "tokens_1280bits", mode)
   init_tokendir(token_dir, mode)
 
   with torch.no_grad():

@@ -38,7 +38,7 @@ class CommaDataset(Dataset):
     self.single_frame = single_frame
     self.tokens_only = tokens_only
 
-    self.token_dir = os.path.join(self.base_dir, "tokens", self.mode)
+    self.token_dir = os.path.join(self.base_dir, "tokens_1280bits", self.mode)
     self.cam_path = os.path.join(self.base_dir, "camera")
     self.log_path = os.path.join(self.base_dir, "log")
     assert len(os.listdir(self.cam_path)) == len(os.listdir(self.log_path))
@@ -61,7 +61,9 @@ class CommaDataset(Dataset):
     self.token_indices = []
     token_batches = [os.path.join(self.token_dir, dirr) for dirr in sorted(os.listdir(self.token_dir)) if dirr.endswith(".npz")]
 
-    for batch in tqdm(token_batches, desc="Loading tokens"):
+    print(f"[~] Loading tokens from {self.token_dir} ...")
+    for batch in (t := tqdm(token_batches)):
+      t.set_description(f"{os.path.basename(batch)}")
       data = np.load(batch, allow_pickle=True)
       tokens = data["tokens"]          # shape: (B, Ht, Wt), dtype: uint16
       dataset_idx = data["dataset_idx"]
